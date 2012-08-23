@@ -133,23 +133,23 @@ func getXY(r *http.Request) (x, y int) {
 }
 
 func click(w http.ResponseWriter, r *http.Request) {
-	context := appengine.NewContext(r)
 	x, y := getXY(r)
-	key := cellKey(x, y, r)
+	cells := getCells(r)
 	player := player(w, r)
-	cell := &Cell{}
-	if err := datastore.Get(context, key, cell); err != nil {
-		if err != datastore.ErrNoSuchEntity {
-			panic(fmt.Errorf("While trying to load cell %i,%i: %v", x, y, err))
+	c := appengine.NewContext(r)
+	if cell, ok := cells[cellId(x, y)]; ok {
+		c.Infof("exists!")
+		if cell.Player == player {
+			c.Infof("same player")
+			removeCell(r, cell)
+			delete(cells, cell.id())
 		}
+	} else {
 		cell := &Cell{x, y, player}
 		putCell(r, cell)
-	} else {
-		if cell.Player == player {
-			removeCell(r, cell)
-		}
+		cells[cell.id()] = cell
 	}
-	load(w, r)
+	render(w, cells)
 }
 
 func putCell(r *http.Request, cell *Cell) {
@@ -181,6 +181,8 @@ func player(w http.ResponseWriter, r *http.Request) string {
 }
 
 func tick(r *http.Request, cells cellMap, meta *Meta) cellMap {
+	context := appengine.NewContext(r)
+	context.Infof("tick!")
 	rval := make(cellMap)
 	meta.LastTick = time.Now()
 	storeMeta(r, meta)
@@ -231,8 +233,7 @@ func getCells(r *http.Request) cellMap {
 	return rval
 }
 
-func load(w http.ResponseWriter, r *http.Request) {
-	cells := getCells(r)
+func render(w http.ResponseWriter, cells cellMap) {
 	rval := make([]*Cell, 0)
 	for _, cell := range cells {
 		rval = append(rval, cell)
@@ -242,6 +243,10 @@ func load(w http.ResponseWriter, r *http.Request) {
 	if err := encoder.Encode(rval); err != nil {
 		panic(fmt.Errorf("While trying to encode %v: %v", rval, err))
 	}
+}
+
+func load(w http.ResponseWriter, r *http.Request) {
+	render(w, getCells(r))
 }
 
 var sessionStore = sessions.NewCookieStore([]byte("wildlife in africa, we've got lions"))
