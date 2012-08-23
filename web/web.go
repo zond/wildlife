@@ -30,6 +30,27 @@ type Meta struct {
 	LastTick time.Time
 }
 
+func getMetaKey(r *http.Request) *datastore.Key {
+	context := appengine.NewContext(r)
+	return datastore.NewKey(context, "Meta", "Meta", 0, nil)
+}
+
+func getMeta(r *http.Request) *Meta {
+	context := appengine.NewContext(r)
+	rval := &Meta{}
+	if err := datastore.Get(context, getMetaKey(r), rval); err != nil {
+		panic(fmt.Errorf("While trying to load meta: %v", err))
+	}
+	return rval
+}
+
+func storeMeta(r *http.Request, meta *Meta) {
+	context := appengine.NewContext(r)
+	if _, err := datastore.Put(context, getMetaKey(r), meta); err != nil {
+		panic(fmt.Errorf("While trying to store %v: %v", meta, err))
+	}
+}
+
 func init() {
 	http.HandleFunc("/", index)
 	http.HandleFunc("/tick", tick)
@@ -107,6 +128,7 @@ func getCells(r *http.Request) map[string]*Cell {
 			panic(fmt.Errorf("While trying to load next Cell: %v", err))
 		}
 	}
+	
 	return rval
 }
 
