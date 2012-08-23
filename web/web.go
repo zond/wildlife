@@ -22,13 +22,29 @@ func cellId(x, y int) string {
 	return fmt.Sprintf("%i,%i", x, y)
 }
 
+func cellKey(x, y int, r *http.Request) *datastore.Key {
+	return datastore.NewKey(appengine.NewContext(r), "Cell", cellId(x, y), 0, nil)
+}
+
 type Cell struct {
 	X int
 	Y int
 	Player string
 }
-func (self *Cell) Id() string {
+func (self *Cell) id() string {
 	return cellId(self.X, self.Y)
+}
+func (self *Cell) key(r *http.Request) *datastore.Key {
+	return cellKey(self.X, self.Y, r)
+}
+func (self *Cell) goodNeighbours(cells map[string]*Cell) int {
+	return 3
+}
+func (self *Cell) badNeighbours(cells map[string]*Cell) int {
+	return 3
+}
+func (self *Cell) neighbours(cells map[string]*Cell) map[int][]string {
+	return make(map[int][]string)
 }
 
 type Meta struct {
@@ -83,7 +99,7 @@ func getXY(r *http.Request) (x, y int) {
 func click(w http.ResponseWriter, r *http.Request) {
 	context := appengine.NewContext(r)
 	x, y := getXY(r)
-	key := datastore.NewKey(context, "Cell", cellId(x, y), 0, nil)
+	key := cellKey(x, y, r)
 	player := player(w, r)
 	cell := &Cell{}
 	if err := datastore.Get(context, key, cell); err != nil {
@@ -91,17 +107,27 @@ func click(w http.ResponseWriter, r *http.Request) {
 			panic(fmt.Errorf("While trying to load cell %i,%i: %v", x, y, err))
 		}
 		cell := &Cell{x, y, player}
-		if _, err = datastore.Put(context, key, cell); err != nil {
-			panic(fmt.Errorf("While trying to store %v: %v", cell, err))
-		}
+		putCell(r, cell)
 	} else {
 		if cell.Player == player {
-			if err = datastore.Delete(context, key); err != nil {
-				panic(fmt.Errorf("While trying to delete %v: %v", key, err))
-			}
+			removeCell(r, cell)
 		}
 	}
 	load(w, r)
+}
+
+func putCell(r *http.Request, cell *Cell) {
+	context := appengine.NewContext(r)
+	if _, err := datastore.Put(context, cell.key(r), cell); err != nil {
+		panic(fmt.Errorf("While trying to store %v: %v", cell, err))
+	}
+}
+
+func removeCell(r *http.Request, cell *Cell) {
+	context := appengine.NewContext(r)
+	if err := datastore.Delete(context, cell.key(r)); err != nil {
+		panic(fmt.Errorf("While trying to delete %v: %v", cell.key(r), err))
+	}
 }
 
 func player(w http.ResponseWriter, r *http.Request) string {
@@ -118,11 +144,33 @@ func player(w http.ResponseWriter, r *http.Request) string {
 	return player
 }
 
-func tick(r *http.Request, cells map[string]*Cell, meta *Meta) {
+func tick(r *http.Request, cells map[string]*Cell, meta *Meta) map[string]*Cell {
+	rval := make(map[string]*Cell)
 	meta.LastTick = time.Now()
 	storeMeta(r, meta)
-	context := appengine.NewContext(r)
-	context.Infof("tick!")
+	for x := 0; x < width; x++ {
+		for y := 0; y < height; y++ {
+			if cell, ok := cells[cellId(x, y)]; ok {
+				good := cell.goodNeighbours(cells)
+				bad := cell.badNeighbours(cells)
+				if good < 2 {
+					removeCell(r, cell)
+				} else if bad > 3 {
+					removeCell(r, cell)
+				} else {
+					rval[cell.id()] = cell
+				}
+			} else {
+				neigh := cell.neighbours(cells)
+				if aspirants, ok := neigh[3]; ok && len(aspirants) == 1 {
+					newCell := &Cell{x, y, aspirants[0]}
+					rval[newCell.id()] = newCell
+					putCell(r, newCell)
+				}
+			}
+		}
+	}
+	return rval
 } 
 
 func getCells(r *http.Request) map[string]*Cell {
@@ -133,7 +181,7 @@ func getCells(r *http.Request) map[string]*Cell {
 	cell := &Cell{}
 	for {
 		if _, err := iterator.Next(cell); err == nil {
-			rval[cell.Id()] = cell
+			rval[cell.id()] = cell
 		} else if err == datastore.Done {
 			break
 		} else {
