@@ -10,77 +10,15 @@ import (
 	"appengine/datastore"
 	"strconv"
 	"time"
+	"cells"
 )
 
 const (
-	width = 128
-	height = 96
 	interval = time.Second
 )
 
-func cellId(x, y int) string {
-	return fmt.Sprintf("%i,%i", x, y)
-}
-
-func cellKey(x, y int, r *http.Request) *datastore.Key {
-	return datastore.NewKey(appengine.NewContext(r), "Cell", cellId(x, y), 0, nil)
-}
-
-type cellMap map[string]*Cell
-func (self cellMap) eachNeighbour(x, y int, f cellFunc) {
-	for dx := -1; dx < 1; dx++ {
-		for dy := -1; dy < 1; dy++ {
-			otherX := x + dx
-			otherY := y + dy
-			if otherX > 0 && otherX < width && otherY > 0 && otherY < height {
-				if cell, ok := self[cellId(otherX, otherY)]; ok {
-					f(cell)
-				}
-			}
-		}
-	}
-}
-func (self cellMap) countNeighbours(cell *Cell, onlyFriendly bool) int {
-	rval := 0
-	self.eachNeighbour(cell.X, cell.Y, func(otherCell *Cell) {
-		if !onlyFriendly || cell.Player == otherCell.Player {
-			rval++
-		}
-	})
-	return rval
-}
-func (self cellMap) neighbourPlayers(x, y int) map[int][]string {
-	counter := make(map[string]int)
-	self.eachNeighbour(x, y, func(cell *Cell) {
-		if count, ok := counter[cell.Player]; ok {
-			counter[cell.Player] = count + 1
-		} else {
-			counter[cell.Player] = 1
-		}
-	})
-	rval := make(map[int][]string)
-	for player, count := range counter {
-		if current, ok := rval[count]; ok {
-			rval[count] = append(current, player)
-		} else {
-			rval[count] = []string{player}
-		}
-	}
-	return rval
-}
-
-type cellFunc func(cell *Cell)
-
-type Cell struct {
-	X int
-	Y int
-	Player string
-}
-func (self *Cell) id() string {
-	return cellId(self.X, self.Y)
-}
-func (self *Cell) key(r *http.Request) *datastore.Key {
-	return cellKey(self.X, self.Y, r)
+func cellKey(cell *cells.Cell, r *http.Request) *datastore.Key {
+	return datastore.NewKey(appengine.NewContext(r), "Cell", cell.Id(), 0, nil)
 }
 
 type Meta struct {
@@ -123,46 +61,43 @@ func getXY(r *http.Request) (x, y int) {
 	if err != nil {
 		panic(fmt.Errorf("While trying to parse %s to int: %v", r.Form["x"], err))
 	}
-	x = x % width
+	x = x % cells.Width
 	y, err = strconv.Atoi(r.Form["y"][0])
 	if err != nil {
 		panic(fmt.Errorf("While trying to parse %s to int: %v", r.Form["y"], err))
 	}
-	y = y % height
+	y = y % cells.Height
 	return
 }
 
 func click(w http.ResponseWriter, r *http.Request) {
 	x, y := getXY(r)
-	cells := getCells(r)
+	board := getCells(r)
 	player := player(w, r)
-	c := appengine.NewContext(r)
-	if cell, ok := cells[cellId(x, y)]; ok {
-		c.Infof("exists!")
+	if cell, ok := board.Get(x, y); ok {
 		if cell.Player == player {
-			c.Infof("same player")
 			removeCell(r, cell)
-			delete(cells, cell.id())
+			delete(board, cell.Id())
 		}
 	} else {
-		cell := &Cell{x, y, player}
+		cell := &cells.Cell{x, y, player}
 		putCell(r, cell)
-		cells[cell.id()] = cell
+		board[cell.Id()] = cell
 	}
-	render(w, cells)
+	render(w, board)
 }
 
-func putCell(r *http.Request, cell *Cell) {
+func putCell(r *http.Request, cell *cells.Cell) {
 	context := appengine.NewContext(r)
-	if _, err := datastore.Put(context, cell.key(r), cell); err != nil {
+	if _, err := datastore.Put(context, cellKey(cell, r), cell); err != nil {
 		panic(fmt.Errorf("While trying to store %v: %v", cell, err))
 	}
 }
 
-func removeCell(r *http.Request, cell *Cell) {
+func removeCell(r *http.Request, cell *cells.Cell) {
 	context := appengine.NewContext(r)
-	if err := datastore.Delete(context, cell.key(r)); err != nil {
-		panic(fmt.Errorf("While trying to delete %v: %v", cell.key(r), err))
+	if err := datastore.Delete(context, cellKey(cell, r)); err != nil {
+		panic(fmt.Errorf("While trying to delete %v: %v", cellKey(cell, r), err))
 	}
 }
 
@@ -180,46 +115,34 @@ func player(w http.ResponseWriter, r *http.Request) string {
 	return player
 }
 
-func tick(r *http.Request, cells cellMap, meta *Meta) cellMap {
+func tick(r *http.Request, board cells.CellMap, meta *Meta) cells.CellMap {
 	context := appengine.NewContext(r)
-	context.Infof("tick!")
-	rval := make(cellMap)
 	meta.LastTick = time.Now()
 	storeMeta(r, meta)
-	for x := 0; x < width; x++ {
-		for y := 0; y < height; y++ {
-			if cell, ok := cells[cellId(x, y)]; ok {
-				good := cells.countNeighbours(cell, true)
-				bad := cells.countNeighbours(cell, false)
-				if good < 2 {
-					removeCell(r, cell)
-				} else if bad > 3 {
-					removeCell(r, cell)
-				} else {
-					rval[cell.id()] = cell
-				}
-			} else {
-				neigh := cells.neighbourPlayers(x, y)
-				if aspirants, ok := neigh[3]; ok && len(aspirants) == 1 {
-					newCell := &Cell{x, y, aspirants[0]}
-					rval[newCell.id()] = newCell
-					putCell(r, newCell)
-				}
-			}
+	rval := board.Tick()
+	context.Infof("went from %v to %v", board, rval)
+	for _, cell := range rval {
+		if !board.Has(cell) {
+			putCell(r, cell)
+		}
+	}
+	for _, cell := range board {
+		if !rval.Has(cell) {
+			removeCell(r, cell)
 		}
 	}
 	return rval
 } 
 
-func getCells(r *http.Request) cellMap {
-	rval := make(cellMap)
+func getCells(r *http.Request) cells.CellMap {
+	rval := make(cells.CellMap)
 	context := appengine.NewContext(r)
 	query := datastore.NewQuery("Cell")
 	iterator := query.Run(context)
-	cell := &Cell{}
 	for {
+		cell := &cells.Cell{}
 		if _, err := iterator.Next(cell); err == nil {
-			rval[cell.id()] = cell
+			rval[cell.Id()] = cell
 		} else if err == datastore.Done {
 			break
 		} else {
@@ -233,10 +156,10 @@ func getCells(r *http.Request) cellMap {
 	return rval
 }
 
-func render(w http.ResponseWriter, cells cellMap) {
-	rval := make([]*Cell, 0)
-	for _, cell := range cells {
-		rval = append(rval, cell)
+func render(w http.ResponseWriter, board cells.CellMap) {
+	rval := make([]*cells.Cell, 0)
+	for _, cell := range board {
+		rval = append(rval, cell.ToJson())
 	}
 	w.Header().Set("Content-Type", "application/json")
 	encoder := json.NewEncoder(w)
@@ -258,7 +181,6 @@ func index(w http.ResponseWriter, r *http.Request) {
 <title>Wildlife</title>
 </head>
 <body>
-<h1>Wildlife</h1>
 </body>
 </html>
 			       `))
