@@ -15,7 +15,12 @@ import (
 const (
 	width = 128
 	height = 96
+	interval = time.Second
 )
+
+func cellId(x, y int) string {
+	return fmt.Sprintf("%i,%i", x, y)
+}
 
 type Cell struct {
 	X int
@@ -23,7 +28,7 @@ type Cell struct {
 	Player string
 }
 func (self *Cell) Id() string {
-	return fmt.Sprintf("%i,%i", self.X, self.Y)
+	return cellId(self.X, self.Y)
 }
 
 type Meta struct {
@@ -38,7 +43,7 @@ func getMetaKey(r *http.Request) *datastore.Key {
 func getMeta(r *http.Request) *Meta {
 	context := appengine.NewContext(r)
 	rval := &Meta{}
-	if err := datastore.Get(context, getMetaKey(r), rval); err != nil {
+	if err := datastore.Get(context, getMetaKey(r), rval); err != nil && err != datastore.ErrNoSuchEntity {
 		panic(fmt.Errorf("While trying to load meta: %v", err))
 	}
 	return rval
@@ -53,7 +58,7 @@ func storeMeta(r *http.Request, meta *Meta) {
 
 func init() {
 	http.HandleFunc("/", index)
-	http.HandleFunc("/tick", tick)
+	http.HandleFunc("/load", load)
 	http.HandleFunc("/click", click)
 }
 
@@ -78,7 +83,7 @@ func getXY(r *http.Request) (x, y int) {
 func click(w http.ResponseWriter, r *http.Request) {
 	context := appengine.NewContext(r)
 	x, y := getXY(r)
-	key := datastore.NewKey(context, "Cell", (&Cell{x, y, ""}).Id(), 0, nil)
+	key := datastore.NewKey(context, "Cell", cellId(x, y), 0, nil)
 	player := player(w, r)
 	cell := &Cell{}
 	if err := datastore.Get(context, key, cell); err != nil {
@@ -96,7 +101,7 @@ func click(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	tick(w, r)
+	load(w, r)
 }
 
 func player(w http.ResponseWriter, r *http.Request) string {
@@ -113,6 +118,13 @@ func player(w http.ResponseWriter, r *http.Request) string {
 	return player
 }
 
+func tick(r *http.Request, cells map[string]*Cell, meta *Meta) {
+	meta.LastTick = time.Now()
+	storeMeta(r, meta)
+	context := appengine.NewContext(r)
+	context.Infof("tick!")
+} 
+
 func getCells(r *http.Request) map[string]*Cell {
 	rval := make(map[string]*Cell)
 	context := appengine.NewContext(r)
@@ -128,11 +140,14 @@ func getCells(r *http.Request) map[string]*Cell {
 			panic(fmt.Errorf("While trying to load next Cell: %v", err))
 		}
 	}
-	
+	meta := getMeta(r)
+	if time.Now().Sub(meta.LastTick) > interval {
+		tick(r, rval, meta)
+	}
 	return rval
 }
 
-func tick(w http.ResponseWriter, r *http.Request) {
+func load(w http.ResponseWriter, r *http.Request) {
 	cells := getCells(r)
 	rval := make([]*Cell, 0)
 	for _, cell := range cells {
