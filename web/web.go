@@ -26,6 +26,51 @@ func cellKey(x, y int, r *http.Request) *datastore.Key {
 	return datastore.NewKey(appengine.NewContext(r), "Cell", cellId(x, y), 0, nil)
 }
 
+type cellMap map[string]*Cell
+func (self cellMap) eachNeighbour(x, y int, f cellFunc) {
+	for dx := -1; dx < 1; dx++ {
+		for dy := -1; dy < 1; dy++ {
+			otherX := x + dx
+			otherY := y + dy
+			if otherX > 0 && otherX < width && otherY > 0 && otherY < height {
+				if cell, ok := self[cellId(otherX, otherY)]; ok {
+					f(cell)
+				}
+			}
+		}
+	}
+}
+func (self cellMap) countNeighbours(cell *Cell, onlyFriendly bool) int {
+	rval := 0
+	self.eachNeighbour(cell.X, cell.Y, func(otherCell *Cell) {
+		if !onlyFriendly || cell.Player == otherCell.Player {
+			rval++
+		}
+	})
+	return rval
+}
+func (self cellMap) neighbourPlayers(x, y int) map[int][]string {
+	counter := make(map[string]int)
+	self.eachNeighbour(x, y, func(cell *Cell) {
+		if count, ok := counter[cell.Player]; ok {
+			counter[cell.Player] = count + 1
+		} else {
+			counter[cell.Player] = 1
+		}
+	})
+	rval := make(map[int][]string)
+	for player, count := range counter {
+		if current, ok := rval[count]; ok {
+			rval[count] = append(current, player)
+		} else {
+			rval[count] = []string{player}
+		}
+	}
+	return rval
+}
+
+type cellFunc func(cell *Cell)
+
 type Cell struct {
 	X int
 	Y int
@@ -36,15 +81,6 @@ func (self *Cell) id() string {
 }
 func (self *Cell) key(r *http.Request) *datastore.Key {
 	return cellKey(self.X, self.Y, r)
-}
-func (self *Cell) goodNeighbours(cells map[string]*Cell) int {
-	return 3
-}
-func (self *Cell) badNeighbours(cells map[string]*Cell) int {
-	return 3
-}
-func (self *Cell) neighbours(cells map[string]*Cell) map[int][]string {
-	return make(map[int][]string)
 }
 
 type Meta struct {
@@ -144,15 +180,15 @@ func player(w http.ResponseWriter, r *http.Request) string {
 	return player
 }
 
-func tick(r *http.Request, cells map[string]*Cell, meta *Meta) map[string]*Cell {
-	rval := make(map[string]*Cell)
+func tick(r *http.Request, cells cellMap, meta *Meta) cellMap {
+	rval := make(cellMap)
 	meta.LastTick = time.Now()
 	storeMeta(r, meta)
 	for x := 0; x < width; x++ {
 		for y := 0; y < height; y++ {
 			if cell, ok := cells[cellId(x, y)]; ok {
-				good := cell.goodNeighbours(cells)
-				bad := cell.badNeighbours(cells)
+				good := cells.countNeighbours(cell, true)
+				bad := cells.countNeighbours(cell, false)
 				if good < 2 {
 					removeCell(r, cell)
 				} else if bad > 3 {
@@ -161,7 +197,7 @@ func tick(r *http.Request, cells map[string]*Cell, meta *Meta) map[string]*Cell 
 					rval[cell.id()] = cell
 				}
 			} else {
-				neigh := cell.neighbours(cells)
+				neigh := cells.neighbourPlayers(x, y)
 				if aspirants, ok := neigh[3]; ok && len(aspirants) == 1 {
 					newCell := &Cell{x, y, aspirants[0]}
 					rval[newCell.id()] = newCell
@@ -173,8 +209,8 @@ func tick(r *http.Request, cells map[string]*Cell, meta *Meta) map[string]*Cell 
 	return rval
 } 
 
-func getCells(r *http.Request) map[string]*Cell {
-	rval := make(map[string]*Cell)
+func getCells(r *http.Request) cellMap {
+	rval := make(cellMap)
 	context := appengine.NewContext(r)
 	query := datastore.NewQuery("Cell")
 	iterator := query.Run(context)
@@ -190,7 +226,7 @@ func getCells(r *http.Request) map[string]*Cell {
 	}
 	meta := getMeta(r)
 	if time.Now().Sub(meta.LastTick) > interval {
-		tick(r, rval, meta)
+		rval = tick(r, rval, meta)
 	}
 	return rval
 }
