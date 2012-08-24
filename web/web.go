@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	interval = time.Second * 5
+	interval = time.Second * 2
 )
 
 func cellKey(cell *cells.Cell, r *http.Request) *datastore.Key {
