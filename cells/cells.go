@@ -12,7 +12,7 @@ const (
 )
 
 func cellId(x, y int) string {
-	return fmt.Sprintf("%i,%i", x, y)
+	return fmt.Sprintf("%v,%v", x, y)
 }
 
 type CellMap map[string]*Cell
@@ -68,6 +68,13 @@ func (self CellMap) Tick() CellMap {
 				}
 			}
 		}
+	}
+	return rval
+}
+func (self CellMap) ToJson() CellMap {
+	rval := make(CellMap)
+	for key, val := range self {
+		rval[key] = val.ToJson()
 	}
 	return rval
 }

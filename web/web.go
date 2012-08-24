@@ -10,11 +10,13 @@ import (
 	"appengine/datastore"
 	"strconv"
 	"time"
+	textTemplate "text/template"
+	"html/template"
 	"cells"
 )
 
 const (
-	interval = time.Second
+	interval = time.Second * 5
 )
 
 func cellKey(cell *cells.Cell, r *http.Request) *datastore.Key {
@@ -48,6 +50,8 @@ func storeMeta(r *http.Request, meta *Meta) {
 
 func init() {
 	http.HandleFunc("/", index)
+	http.HandleFunc("/js", js)
+	http.HandleFunc("/css", css)
 	http.HandleFunc("/load", load)
 	http.HandleFunc("/click", click)
 }
@@ -129,11 +133,9 @@ func player(w http.ResponseWriter, r *http.Request) string {
 }
 
 func tick(r *http.Request, board cells.CellMap, meta *Meta) cells.CellMap {
-	context := appengine.NewContext(r)
 	meta.LastTick = time.Now()
 	storeMeta(r, meta)
 	rval := board.Tick()
-	context.Infof("went from %v to %v", board, rval)
 	for _, cell := range rval {
 		if !board.Has(cell) {
 			putCell(r, cell)
@@ -170,14 +172,10 @@ func getCells(r *http.Request) cells.CellMap {
 }
 
 func render(w http.ResponseWriter, board cells.CellMap) {
-	rval := make([]*cells.Cell, 0)
-	for _, cell := range board {
-		rval = append(rval, cell.ToJson())
-	}
 	w.Header().Set("Content-Type", "application/json")
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(rval); err != nil {
-		panic(fmt.Errorf("While trying to encode %v: %v", rval, err))
+	if err := encoder.Encode(board.ToJson()); err != nil {
+		panic(fmt.Errorf("While trying to encode %v: %v", board, err))
 	}
 }
 
@@ -185,16 +183,39 @@ func load(w http.ResponseWriter, r *http.Request) {
 	render(w, getCells(r))
 }
 
+var htmlTemplates = template.Must(template.New("html").ParseGlob("templates/*.html"))
+var jsTemplates = textTemplate.Must(textTemplate.New("js").ParseGlob("templates/*.js"))
+var cssTemplates = textTemplate.Must(textTemplate.New("js").ParseGlob("templates/*.css"))
+
 var sessionStore = sessions.NewCookieStore([]byte("wildlife in africa, we've got lions"))
 
+func js(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript")
+	data := struct {
+		Width int
+		Height int
+		Delay int
+	}{cells.Width, cells.Height, int(interval / time.Millisecond)}
+	if err := jsTemplates.ExecuteTemplate(w, "index.js", data); err != nil {
+		panic(fmt.Errorf("While rendering index.js: %v", err))
+	}
+}
+
+func css(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css")
+	if err := cssTemplates.ExecuteTemplate(w, "index.css", nil); err != nil {
+		panic(fmt.Errorf("While rendering index.css: %v", err))
+	}
+}
+
 func index(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprint(w, fmt.Sprintf(`
-<html>
-<head>
-<title>Wildlife</title>
-</head>
-<body>
-</body>
-</html>
-			       `))
+	cols := make([]interface{}, cells.Width)
+	rows := make([]interface{}, cells.Height)
+	data := struct {
+		Cols []interface{}
+		Rows []interface{}
+	}{cols, rows}
+	if err := htmlTemplates.ExecuteTemplate(w, "index.html", data); err != nil {
+		panic(fmt.Errorf("While rendering index.html: %v", err))
+	}
 }
