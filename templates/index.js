@@ -13,12 +13,22 @@ function render(data) {
 function load() {
   $.ajax("/load").done(render);
 }
+function clickCell(cell) {
+  $.ajax("/click?x=" + cell.attr("data-x") + "&y=" + cell.attr("data-y")).done(render);
+}
 $(document).ready(function() {
   load();
   setInterval(load, {{.Delay}});
-  $(".cell").click(function(event) {
-    $.ajax("/click?x=" + $(event.target).attr("data-x") + "&y=" + $(event.target).attr("data-y")).done(render);
-      
+  $("body").bind("mousedown", function(event) {
+    $(".cellMap td").bind("mouseover", function(event) {
+      clickCell($(event.target));
+    });
+  });
+  $("body").bind("mouseup", function(event) {
+    $(".cellMap td").unbind("mouseover");
+  });
+  $(".cellMap td").bind("mousedown", function(event) {
+    clickCell($(event.target));
   });
 });
 

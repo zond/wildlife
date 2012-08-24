@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	Width = 128
-	Height = 96
+	Width = 64
+	Height = 56
 )
 
 func cellId(x, y int) string {

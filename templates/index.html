@@ -10,7 +10,7 @@
 {{range $row, $val1 := $.Rows}}
 <tr>
 {{range $col, $val2 := $.Cols}}
-<td class="cell" data-x="{{$col}}" data-y="{{$row}}" id="c{{$col}}_{{$row}}">
+<td data-x="{{$col}}" data-y="{{$row}}" id="c{{$col}}_{{$row}}">
 <div></div>
 </td>
 {{end}}
