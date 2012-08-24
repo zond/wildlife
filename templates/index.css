@@ -13,6 +13,10 @@
     position: absolute;
 }
 
+#stat {
+    float: right;
+}
+
 #help {
     position: absolute;
     height: 20px;

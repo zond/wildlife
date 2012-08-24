@@ -17,6 +17,8 @@ const (
 	interval = time.Second * 1
 	metaKey = "meta"
 	cellsKey = "cells"
+	maxClicks = 10
+	reloadInterval = time.Second * 20
 )
 
 type Meta struct {
@@ -29,6 +31,7 @@ type cellMapContainer struct {
 
 var meta = &Meta{}
 var board = make(cells.CellMap)
+var clicks = make(map[string][]time.Time)
 
 func init() {
 	http.HandleFunc("/", index)
@@ -72,16 +75,21 @@ func click(w http.ResponseWriter, r *http.Request) {
 	board := getCells(r)
 	player := player(w, r)
 	for i := 0; i < len(x); i++ {
-		if cell, ok := board.Get(x[i], y[i]); ok {
-			if cell.Player == player {
-				delete(board, cell.Id())
+		if len(clicks[player]) < maxClicks {
+			if cell, ok := board.Get(x[i], y[i]); ok {
+				if cell.Player == player {
+					delete(board, cell.Id())
+				}
+			} else {
+				cell := &cells.Cell{x[i], y[i], player}
+				board[cell.Id()] = cell
 			}
+			clicks[player] = append(clicks[player], time.Now())
 		} else {
-			cell := &cells.Cell{x[i], y[i], player}
-			board[cell.Id()] = cell
+			break
 		}
 	}
-	render(w, board)
+	render(w, r, board)
 }
 
 func player(w http.ResponseWriter, r *http.Request) string {
@@ -106,16 +114,33 @@ func getCells(r *http.Request) cells.CellMap {
 	return board
 }
 
-func render(w http.ResponseWriter, board cells.CellMap) {
+func getClicks(w http.ResponseWriter, r *http.Request) int {
+	player := player(w, r)
+	var newClicks []time.Time
+	
+	for _, t := range clicks[player] {
+		if t.Add(reloadInterval).After(time.Now()) {
+			newClicks = append(newClicks, t)
+		}
+	} 
+	clicks[player] = newClicks
+	return len(newClicks)
+}
+
+func render(w http.ResponseWriter, r *http.Request, board cells.CellMap) {
+	response := make(map[string]interface{})
+	response["clicks"] = maxClicks - getClicks(w, r)
+	response["cells"] = board.ToJson()
+
 	w.Header().Set("Content-Type", "application/json")
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(board.ToJson()); err != nil {
-		panic(fmt.Errorf("While trying to encode %v: %v", board, err))
+	if err := encoder.Encode(response); err != nil {
+		panic(fmt.Errorf("While trying to encode %v: %v", response, err))
 	}
 }
 
 func load(w http.ResponseWriter, r *http.Request) {
-	render(w, getCells(r))
+	render(w, r, getCells(r))
 }
 
 var htmlTemplates = template.Must(template.New("html").ParseGlob("templates/*.html"))

@@ -1,8 +1,9 @@
 var clickBuffer = null;
 function render(data) {
+  $("#clicks").html(data["clicks"]);
   for (var x = 0; x < {{.Width}}; x++) {
     for (var y = 0; y < {{.Height}}; y++) {
-      var cell = data["" + x + "," + y];
+      var cell = data["cells"]["" + x + "," + y];
       if (cell == null) {
         $("#c" + x + "_" + y).css("background-color", "white");
       } else {
