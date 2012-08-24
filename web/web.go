@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	interval = time.Second * 2
+	interval = time.Second * 1
 	metaKey = "meta"
 	cellsKey = "cells"
 )
