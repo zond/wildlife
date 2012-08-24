@@ -52,21 +52,32 @@ func init() {
 	http.HandleFunc("/click", click)
 }
 
-func getXY(r *http.Request) (x, y int) {
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func getXY(r *http.Request) (x, y []int) {
 	err := r.ParseForm()
 	if err != nil {
 		panic(fmt.Errorf("While trying to parse form: %v", err))
 	}
-	x, err = strconv.Atoi(r.Form["x"][0])
-	if err != nil {
-		panic(fmt.Errorf("While trying to parse %s to int: %v", r.Form["x"], err))
+	for i := 0; i < min(len(r.Form["x"]), len(r.Form["y"])); i++ {
+		j, err := strconv.Atoi(r.Form["x"][i])
+		if err != nil {
+			panic(fmt.Errorf("While trying to parse %s to int: %v", r.Form["x"][i], err))
+		}
+		j = j % cells.Width
+		x = append(x, j)
+		j, err = strconv.Atoi(r.Form["y"][i])
+		if err != nil {
+			panic(fmt.Errorf("While trying to parse %s to int: %v", r.Form["y"][i], err))
+		}
+		j = j % cells.Height
+		y = append(y, j)
 	}
-	x = x % cells.Width
-	y, err = strconv.Atoi(r.Form["y"][0])
-	if err != nil {
-		panic(fmt.Errorf("While trying to parse %s to int: %v", r.Form["y"], err))
-	}
-	y = y % cells.Height
 	return
 }
 
@@ -74,15 +85,17 @@ func click(w http.ResponseWriter, r *http.Request) {
 	x, y := getXY(r)
 	board := getCells(r)
 	player := player(w, r)
-	if cell, ok := board.Get(x, y); ok {
-		if cell.Player == player {
-			removeCell(r, cell)
-			delete(board, cell.Id())
+	for i := 0; i < len(x); i++ {
+		if cell, ok := board.Get(x[i], y[i]); ok {
+			if cell.Player == player {
+				removeCell(r, cell)
+				delete(board, cell.Id())
+			}
+		} else {
+			cell := &cells.Cell{x[i], y[i], player}
+			putCell(r, cell)
+			board[cell.Id()] = cell
 		}
-	} else {
-		cell := &cells.Cell{x, y, player}
-		putCell(r, cell)
-		board[cell.Id()] = cell
 	}
 	render(w, board)
 }
