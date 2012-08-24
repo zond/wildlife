@@ -7,7 +7,7 @@ import (
 	"code.google.com/p/gorilla/sessions"
 	"encoding/json"
 	"appengine"
-	"appengine/datastore"
+	"appengine/memcache"
 	"strconv"
 	"time"
 	textTemplate "text/template"
@@ -17,33 +17,28 @@ import (
 
 const (
 	interval = time.Second * 2
+	metaKey = "meta"
 )
-
-func cellKey(cell *cells.Cell, r *http.Request) *datastore.Key {
-	return datastore.NewKey(appengine.NewContext(r), "Cell", cell.Id(), 0, nil)
-}
 
 type Meta struct {
 	LastTick time.Time
 }
 
-func getMetaKey(r *http.Request) *datastore.Key {
-	context := appengine.NewContext(r)
-	return datastore.NewKey(context, "Meta", "Meta", 0, nil)
-}
-
 func getMeta(r *http.Request) *Meta {
 	context := appengine.NewContext(r)
-	rval := &Meta{}
-	if err := datastore.Get(context, getMetaKey(r), rval); err != nil && err != datastore.ErrNoSuchEntity {
-		panic(fmt.Errorf("While trying to load meta: %v", err))
+	rval :=  &Meta{}
+	_, err := memcache.JSON.Get(context, metaKey, rval)
+	if err == nil {
+		return rval
+	} else if err == memcache.ErrCacheMiss {
+		return rval
 	}
-	return rval
+	panic(fmt.Errorf("While trying to load meta: %v", err))
 }
 
 func storeMeta(r *http.Request, meta *Meta) {
 	context := appengine.NewContext(r)
-	if _, err := datastore.Put(context, getMetaKey(r), meta); err != nil {
+	if err := memcache.JSON.Set(context, &memcache.Item{Key: metaKey, Object: meta}); err != nil {
 		panic(fmt.Errorf("While trying to store %v: %v", meta, err))
 	}
 }
@@ -106,16 +101,28 @@ func click(w http.ResponseWriter, r *http.Request) {
 
 func putCell(r *http.Request, cell *cells.Cell) {
 	context := appengine.NewContext(r)
-	if _, err := datastore.Put(context, cellKey(cell, r), cell); err != nil {
+	if err := memcache.JSON.Set(context, &memcache.Item{Key: cell.Id(), Object: cell}); err != nil {
 		panic(fmt.Errorf("While trying to store %v: %v", cell, err))
 	}
 }
 
 func removeCell(r *http.Request, cell *cells.Cell) {
 	context := appengine.NewContext(r)
-	if err := datastore.Delete(context, cellKey(cell, r)); err != nil {
-		panic(fmt.Errorf("While trying to delete %v: %v", cellKey(cell, r), err))
+	if err := memcache.Delete(context, cell.Id()); err != nil {
+		panic(fmt.Errorf("While trying to delete %v: %v", cell, err))
 	}
+}
+
+func getCell(r *http.Request, x, y int) *cells.Cell {
+	context := appengine.NewContext(r)
+	rval := &cells.Cell{x, y, ""}
+	_, err := memcache.JSON.Get(context, rval.Id(), rval)
+	if err == nil {
+		return rval
+	} else if err == memcache.ErrCacheMiss {
+		return nil
+	}
+	panic(fmt.Errorf("While trying to load %v: %v", rval, err))
 }
 
 func player(w http.ResponseWriter, r *http.Request) string {
@@ -151,17 +158,11 @@ func tick(r *http.Request, board cells.CellMap, meta *Meta) cells.CellMap {
 
 func getCells(r *http.Request) cells.CellMap {
 	rval := make(cells.CellMap)
-	context := appengine.NewContext(r)
-	query := datastore.NewQuery("Cell")
-	iterator := query.Run(context)
-	for {
-		cell := &cells.Cell{}
-		if _, err := iterator.Next(cell); err == nil {
-			rval[cell.Id()] = cell
-		} else if err == datastore.Done {
-			break
-		} else {
-			panic(fmt.Errorf("While trying to load next Cell: %v", err))
+	for x := 0; x < cells.Width; x++ {
+		for y := 0; y < cells.Height; y++ {
+			if cell := getCell(r, x, y); cell != nil {
+				rval[cell.Id()] = cell
+			}
 		}
 	}
 	meta := getMeta(r)
