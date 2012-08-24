@@ -18,10 +18,15 @@ import (
 const (
 	interval = time.Second * 2
 	metaKey = "meta"
+	cellsKey = "cells"
 )
 
 type Meta struct {
 	LastTick time.Time
+}
+
+type cellMapContainer struct {
+	cells cells.CellMap
 }
 
 func getMeta(r *http.Request) *Meta {
@@ -87,42 +92,16 @@ func click(w http.ResponseWriter, r *http.Request) {
 	for i := 0; i < len(x); i++ {
 		if cell, ok := board.Get(x[i], y[i]); ok {
 			if cell.Player == player {
-				removeCell(r, cell)
 				delete(board, cell.Id())
+				storeCells(r, board)
 			}
 		} else {
 			cell := &cells.Cell{x[i], y[i], player}
-			putCell(r, cell)
 			board[cell.Id()] = cell
+			storeCells(r, board)
 		}
 	}
 	render(w, board)
-}
-
-func putCell(r *http.Request, cell *cells.Cell) {
-	context := appengine.NewContext(r)
-	if err := memcache.JSON.Set(context, &memcache.Item{Key: cell.Id(), Object: cell}); err != nil {
-		panic(fmt.Errorf("While trying to store %v: %v", cell, err))
-	}
-}
-
-func removeCell(r *http.Request, cell *cells.Cell) {
-	context := appengine.NewContext(r)
-	if err := memcache.Delete(context, cell.Id()); err != nil {
-		panic(fmt.Errorf("While trying to delete %v: %v", cell, err))
-	}
-}
-
-func getCell(r *http.Request, x, y int) *cells.Cell {
-	context := appengine.NewContext(r)
-	rval := &cells.Cell{x, y, ""}
-	_, err := memcache.JSON.Get(context, rval.Id(), rval)
-	if err == nil {
-		return rval
-	} else if err == memcache.ErrCacheMiss {
-		return nil
-	}
-	panic(fmt.Errorf("While trying to load %v: %v", rval, err))
 }
 
 func player(w http.ResponseWriter, r *http.Request) string {
@@ -139,35 +118,26 @@ func player(w http.ResponseWriter, r *http.Request) string {
 	return player
 }
 
-func tick(r *http.Request, board cells.CellMap, meta *Meta) cells.CellMap {
-	meta.LastTick = time.Now()
-	storeMeta(r, meta)
-	rval := board.Tick()
-	for _, cell := range rval {
-		if !board.Has(cell) {
-			putCell(r, cell)
-		}
+func storeCells(r *http.Request, board cells.CellMap) {
+	context := appengine.NewContext(r)
+	if err := memcache.JSON.Set(context, &memcache.Item{Key: cellsKey, Object: board}); err != nil {
+		panic(fmt.Errorf("While trying to store %v: %v", board, err))
 	}
-	for _, cell := range board {
-		if !rval.Has(cell) {
-			removeCell(r, cell)
-		}
-	}
-	return rval
-} 
+}
 
 func getCells(r *http.Request) cells.CellMap {
+	context := appengine.NewContext(r)
 	rval := make(cells.CellMap)
-	for x := 0; x < cells.Width; x++ {
-		for y := 0; y < cells.Height; y++ {
-			if cell := getCell(r, x, y); cell != nil {
-				rval[cell.Id()] = cell
-			}
-		}
+	_, err := memcache.JSON.Get(context, cellsKey, &rval)
+	if err != nil && err != memcache.ErrCacheMiss {
+		panic(fmt.Errorf("While trying to load cells: %v", err))
 	}
 	meta := getMeta(r)
 	if time.Now().Sub(meta.LastTick) > interval {
-		rval = tick(r, rval, meta)
+		meta.LastTick = time.Now()
+		storeMeta(r, meta)
+		rval = rval.Tick()
+		storeCells(r, rval)
 	}
 	return rval
 }
