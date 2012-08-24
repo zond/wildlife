@@ -1,21 +1,28 @@
 <html>
-<head>
-<title>Wildlife</title>
-<link rel="stylesheet" type="text/css" href="/css" />
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.0/jquery.min.js"></script>
-<script src="/js"></script>
-</head>
-<body>
-<table class="cellMap" cellspacing="1" cellpadding="0">
-{{range $row, $val1 := $.Rows}}
-<tr>
-{{range $col, $val2 := $.Cols}}
-<td data-x="{{$col}}" data-y="{{$row}}" id="c{{$col}}_{{$row}}">
-<div></div>
-</td>
-{{end}}
-</td>
-{{end}}
-</table>
-</body>
+  <head>
+    <title>Wildlife</title>
+    <link rel="stylesheet" type="text/css" href="/css" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.0/jquery.min.js"></script>
+    <script src="/js"></script>
+  </head>
+  <body>
+    <div class="outerCellMapContainer">
+      <div class="innerCellMapContainer">
+        <table class="cellMap" cellspacing="1" cellpadding="0">
+          {{range $row, $val1 := $.Rows}}
+          <tr>
+            {{range $col, $val2 := $.Cols}}
+            <td data-x="{{$col}}" data-y="{{$row}}" id="c{{$col}}_{{$row}}">
+              <div></div>
+            </td>
+            {{end}}
+          </tr>
+          {{end}}
+        </table>
+        <div id="help">
+          shift to buffer clicks
+        </div>
+      </div>
+    </div>
+  </body>
 </html>
