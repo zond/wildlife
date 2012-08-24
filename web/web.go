@@ -6,8 +6,6 @@ import (
 	"github.com/zond/tools"
 	"code.google.com/p/gorilla/sessions"
 	"encoding/json"
-	"appengine"
-	"appengine/memcache"
 	"strconv"
 	"time"
 	textTemplate "text/template"
@@ -29,24 +27,8 @@ type cellMapContainer struct {
 	cells cells.CellMap
 }
 
-func getMeta(r *http.Request) *Meta {
-	context := appengine.NewContext(r)
-	rval :=  &Meta{}
-	_, err := memcache.JSON.Get(context, metaKey, rval)
-	if err == nil {
-		return rval
-	} else if err == memcache.ErrCacheMiss {
-		return rval
-	}
-	panic(fmt.Errorf("While trying to load meta: %v", err))
-}
-
-func storeMeta(r *http.Request, meta *Meta) {
-	context := appengine.NewContext(r)
-	if err := memcache.JSON.Set(context, &memcache.Item{Key: metaKey, Object: meta}); err != nil {
-		panic(fmt.Errorf("While trying to store %v: %v", meta, err))
-	}
-}
+var meta = &Meta{}
+var board = make(cells.CellMap)
 
 func init() {
 	http.HandleFunc("/", index)
@@ -93,12 +75,10 @@ func click(w http.ResponseWriter, r *http.Request) {
 		if cell, ok := board.Get(x[i], y[i]); ok {
 			if cell.Player == player {
 				delete(board, cell.Id())
-				storeCells(r, board)
 			}
 		} else {
 			cell := &cells.Cell{x[i], y[i], player}
 			board[cell.Id()] = cell
-			storeCells(r, board)
 		}
 	}
 	render(w, board)
@@ -118,28 +98,12 @@ func player(w http.ResponseWriter, r *http.Request) string {
 	return player
 }
 
-func storeCells(r *http.Request, board cells.CellMap) {
-	context := appengine.NewContext(r)
-	if err := memcache.JSON.Set(context, &memcache.Item{Key: cellsKey, Object: board}); err != nil {
-		panic(fmt.Errorf("While trying to store %v: %v", board, err))
-	}
-}
-
 func getCells(r *http.Request) cells.CellMap {
-	context := appengine.NewContext(r)
-	rval := make(cells.CellMap)
-	_, err := memcache.JSON.Get(context, cellsKey, &rval)
-	if err != nil && err != memcache.ErrCacheMiss {
-		panic(fmt.Errorf("While trying to load cells: %v", err))
-	}
-	meta := getMeta(r)
 	if time.Now().Sub(meta.LastTick) > interval {
 		meta.LastTick = time.Now()
-		storeMeta(r, meta)
-		rval = rval.Tick()
-		storeCells(r, rval)
+		board = board.Tick()
 	}
-	return rval
+	return board
 }
 
 func render(w http.ResponseWriter, board cells.CellMap) {
