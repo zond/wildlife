@@ -3,11 +3,13 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"github.com/zond/tools"
 	"code.google.com/p/gorilla/sessions"
 	"encoding/json"
 	"strconv"
 	"time"
+	"io"
 	textTemplate "text/template"
 	"html/template"
 	"cells"
@@ -39,6 +41,7 @@ func init() {
 	http.HandleFunc("/css", css)
 	http.HandleFunc("/load", load)
 	http.HandleFunc("/click", click)
+	http.HandleFunc("/bg.png", bg)
 }
 
 func min(a, b int) int {
@@ -148,6 +151,18 @@ var jsTemplates = textTemplate.Must(textTemplate.New("js").ParseGlob("templates/
 var cssTemplates = textTemplate.Must(textTemplate.New("js").ParseGlob("templates/*.css"))
 
 var sessionStore = sessions.NewCookieStore([]byte("wildlife in africa, we've got lions"))
+
+func bg(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	image, err := os.Open("images/gophers.png")
+	if err != nil {
+		panic(fmt.Errorf("While trying to open background image: %v", err))
+	}
+	_, err = io.Copy(w, image)
+	if err != nil {
+		panic(fmt.Errorf("While trying to send background image: %v", err))
+	}
+}
 
 func js(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript")
