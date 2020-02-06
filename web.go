@@ -1,25 +1,27 @@
-package web
+package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/gorilla/sessions"
+	"github.com/zond/tools"
+	"github.com/zond/wildlife/cells"
+	"google.golang.org/appengine"
+	"html/template"
+	"io"
 	"net/http"
 	"os"
-	"github.com/zond/tools"
-	"code.google.com/p/gorilla/sessions"
-	"encoding/json"
 	"strconv"
 	"time"
-	"io"
+
 	textTemplate "text/template"
-	"html/template"
-	"cells"
 )
 
 const (
-	interval = time.Second * 1
-	metaKey = "meta"
-	cellsKey = "cells"
-	maxClicks = 10
+	interval       = time.Second * 1
+	metaKey        = "meta"
+	cellsKey       = "cells"
+	maxClicks      = 10
 	reloadInterval = time.Second * 20
 )
 
@@ -35,13 +37,14 @@ var meta = &Meta{}
 var board = make(cells.CellMap)
 var clicks = make(map[string][]time.Time)
 
-func init() {
+func main() {
 	http.HandleFunc("/", index)
 	http.HandleFunc("/js", js)
 	http.HandleFunc("/css", css)
 	http.HandleFunc("/load", load)
 	http.HandleFunc("/click", click)
 	http.HandleFunc("/bg.png", bg)
+	appengine.Main()
 }
 
 func min(a, b int) int {
@@ -120,12 +123,12 @@ func getCells(r *http.Request) cells.CellMap {
 func getClicks(w http.ResponseWriter, r *http.Request) int {
 	player := player(w, r)
 	var newClicks []time.Time
-	
+
 	for _, t := range clicks[player] {
 		if t.Add(reloadInterval).After(time.Now()) {
 			newClicks = append(newClicks, t)
 		}
-	} 
+	}
 	clicks[player] = newClicks
 	return len(newClicks)
 }
@@ -167,9 +170,9 @@ func bg(w http.ResponseWriter, r *http.Request) {
 func js(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript")
 	data := struct {
-		Width int
+		Width  int
 		Height int
-		Delay int
+		Delay  int
 	}{cells.Width, cells.Height, int(interval / time.Millisecond)}
 	if err := jsTemplates.ExecuteTemplate(w, "index.js", data); err != nil {
 		panic(fmt.Errorf("While rendering index.js: %v", err))
