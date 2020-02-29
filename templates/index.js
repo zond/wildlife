@@ -46,7 +46,7 @@ $(document).ready(function() {
     });
   });
   $("body").bind("keydown", function(event) {
-    if (event.keyCode == 16) {
+    if (event.keyCode == 16 && clickBuffer == null) {
       clickBuffer = {};
     }
   });

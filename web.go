@@ -3,16 +3,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/sessions"
-	"github.com/zond/tools"
-	"github.com/zond/wildlife/cells"
-	"google.golang.org/appengine"
 	"html/template"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/gorilla/sessions"
+	"github.com/zond/tools"
+	"github.com/zond/wildlife/cells"
+	"google.golang.org/appengine"
 
 	textTemplate "text/template"
 )

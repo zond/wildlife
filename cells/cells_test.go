@@ -1,4 +1,3 @@
-
 package cells
 
 import (
@@ -32,7 +31,6 @@ func TestCountNeighbours(t *testing.T) {
 		t.Errorf("%v should have 0 neigbours in %v but had %v", cell, cells, count)
 	}
 }
-
 
 func TestTick(t *testing.T) {
 	cells := make(CellMap)
@@ -79,12 +77,12 @@ func TestBlinker(t *testing.T) {
 		t.Errorf("%v should have 3 cells", cells2)
 	}
 	if _, ok := cells2[cellId(9, 10)]; !ok {
-		t.Errorf("%v should have a cell at 9,10")
+		t.Errorf("%v should have a cell at 9,10", cells2)
 	}
 	if _, ok := cells2[cellId(10, 10)]; !ok {
-		t.Errorf("%v should have a cell at 10,10")
+		t.Errorf("%v should have a cell at 10,10", cells2)
 	}
 	if _, ok := cells2[cellId(11, 10)]; !ok {
-		t.Errorf("%v should have a cell at 11,10")
+		t.Errorf("%v should have a cell at 11,10", cells2)
 	}
 }
